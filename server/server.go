@@ -55,15 +55,15 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 		app.runningPom = true
 		app.currentTimer = time.NewTimer(POM_TIME)
 		app.lastStartTime = time.Now()
-		go func() {
+		go func(pomName string) {
 			<-app.currentTimer.C
 			app.runningPom = false
-			fmt.Println("Finished POM")
+			fmt.Println("Finished POM", pomName)
 			// wrapper for these? Moving to boltdb anyway so might as well wait
 			app.results["Success"] = app.results["Success"] + 1
 			app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
 			app.currentTimer = nil
-		}()
+		}(optName)
 		res.WriteHeader(http.StatusCreated)
 		startTime := app.lastStartTime.Format(time.Kitchen)
 		finishTime := app.lastStartTime.Add(time.Minute * 25).Format(time.Kitchen)
@@ -114,6 +114,7 @@ func main() {
 		eventBus:   notifications,
 		results:    map[string]int{"Success": 0, "Cancelled": 0, "Paused": 0},
 	}
+	// move into app, create a 'start' or 'run' method
 	go func(eventChannel chan PomEvent) {
 		for {
 			event := <-eventChannel
@@ -125,15 +126,19 @@ func main() {
 	r := mux.NewRouter()
 
 	// api endpoints
+	r.HandleFunc("/start", app.apiStartHandler)
 	r.HandleFunc("/start/{name}", app.apiStartHandler)
 	r.HandleFunc("/status", app.apiStatusHandler)
 	r.HandleFunc("/stop", app.apiStopHandler)
 
+	// better way to handle this?
+	// also client should send SIGINT to shutdown
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigs
 		done <- struct{}{}
 	}()
+	// move into app start / settings?
 	listener, err := net.Listen("tcp", portString)
 	if err != nil {
 		fmt.Errorf("Error creating listener", err)
