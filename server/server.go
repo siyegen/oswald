@@ -2,8 +2,12 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -45,7 +49,9 @@ func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 
 func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 	if !app.runningPom {
-		fmt.Println("Starting Pom")
+		vars := mux.Vars(req)
+		optName, _ := vars["name"]
+		fmt.Println("Starting Pom", optName)
 		app.runningPom = true
 		app.currentTimer = time.NewTimer(POM_TIME)
 		app.lastStartTime = time.Now()
@@ -53,12 +59,15 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 			<-app.currentTimer.C
 			app.runningPom = false
 			fmt.Println("Finished POM")
+			// wrapper for these? Moving to boltdb anyway so might as well wait
 			app.results["Success"] = app.results["Success"] + 1
 			app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
 			app.currentTimer = nil
 		}()
 		res.WriteHeader(http.StatusCreated)
-		res.Write([]byte(fmt.Sprintf("Started POM at %s", time.Now())))
+		startTime := app.lastStartTime.Format(time.Kitchen)
+		finishTime := app.lastStartTime.Add(time.Minute * 25).Format(time.Kitchen)
+		res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
 	} else {
 		res.WriteHeader(http.StatusBadRequest)
 		res.Write([]byte("Pom already running, pause or cancel first"))
@@ -69,7 +78,7 @@ func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 	if app.runningPom {
 		mintuesLeft := (app.lastStartTime.Add(POM_TIME)).Sub(time.Now())
 		res.WriteHeader(http.StatusConflict)
-		res.Write([]byte(fmt.Sprintf("Currently in pom, %s minutes left", mintuesLeft)))
+		res.Write([]byte(fmt.Sprintf("Currently in pom, ~%d minutes left", int(mintuesLeft.Minutes()))))
 	} else {
 		success := app.results["Success"]
 		cancelled := app.results["Cancelled"]
@@ -94,6 +103,9 @@ func (n *OSXNotifier) sendNotification(message, title string) error {
 func main() {
 	osxNotifier := &OSXNotifier{OSX_CMD, "-e"}
 
+	sigs := make(chan os.Signal)
+	done := make(chan struct{})
+
 	// eventbus for notifications
 	notifications := make(chan PomEvent)
 
@@ -113,11 +125,24 @@ func main() {
 	r := mux.NewRouter()
 
 	// api endpoints
-	r.HandleFunc("/start", app.apiStartHandler)
+	r.HandleFunc("/start/{name}", app.apiStartHandler)
 	r.HandleFunc("/status", app.apiStatusHandler)
 	r.HandleFunc("/stop", app.apiStopHandler)
 
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigs
+		done <- struct{}{}
+	}()
+	listener, err := net.Listen("tcp", portString)
+	if err != nil {
+		fmt.Errorf("Error creating listener", err)
+	}
+
 	fmt.Println("Starting Server at:", portString)
-	http.ListenAndServe(portString, r)
-	fmt.Println("Shutting down")
+	go http.Serve(listener, r)
+
+	<-done
+	fmt.Println("\nShutting down")
+
 }
