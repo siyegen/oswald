@@ -10,20 +10,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/boltdb/bolt"
 	"github.com/gorilla/mux"
 )
 
 const POM_TIME time.Duration = time.Minute * 25
 const OSX_CMD string = "osascript"
-
-type App struct {
-	runningPom bool
-	results    map[string]int
-	eventBus   chan PomEvent
-
-	currentTimer  *time.Timer
-	lastStartTime time.Time
-}
 
 type PomEvent struct {
 	eventType string
@@ -31,14 +23,34 @@ type PomEvent struct {
 	message   string
 }
 
+type Pom struct {
+	startTime time.Time
+	name      string
+	timer     *time.Timer
+}
+
+func NewPom(optionalName string) *Pom {
+	return &Pom{name: optionalName}
+}
+
+type App struct {
+	runningPom bool
+	results    map[string]int
+	eventBus   chan PomEvent
+
+	currentPom    *Pom
+	currentTimer  *time.Timer
+	lastStartTime time.Time
+}
+
 func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 	if app.runningPom {
-		fmt.Println("Stopping Pom")
+		fmt.Println("Stopping Pom", app.currentPom.name)
 		// wrap in some helper functions?
 		app.runningPom = false
-		app.currentTimer.Stop()
+		app.currentPom.timer.Stop()
+		app.currentPom = nil
 		app.results["Cancelled"] = app.results["Cancelled"] + 1
-		app.currentTimer = nil
 		res.WriteHeader(http.StatusAccepted)
 		res.Write([]byte("Pom has been cancelled"))
 	} else {
@@ -48,25 +60,30 @@ func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
-	if !app.runningPom {
+	if !app.runningPom { // has pom method?
 		vars := mux.Vars(req)
 		optName, _ := vars["name"]
-		fmt.Println("Starting Pom", optName)
+
+		pom := NewPom(optName)
+		app.currentPom = pom
 		app.runningPom = true
-		app.currentTimer = time.NewTimer(POM_TIME)
-		app.lastStartTime = time.Now()
-		go func(pomName string) {
-			<-app.currentTimer.C
+		app.currentPom.timer = time.NewTimer(POM_TIME)
+		app.currentPom.startTime = time.Now()
+
+		fmt.Println("Starting Pom", app.currentPom.name)
+		go func() {
+			<-app.currentPom.timer.C
 			app.runningPom = false
-			fmt.Println("Finished POM", pomName)
+			fmt.Println("Finished POM", app.currentPom.name)
 			// wrapper for these? Moving to boltdb anyway so might as well wait
 			app.results["Success"] = app.results["Success"] + 1
 			app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
 			app.currentTimer = nil
-		}(optName)
+		}()
 		res.WriteHeader(http.StatusCreated)
-		startTime := app.lastStartTime.Format(time.Kitchen)
-		finishTime := app.lastStartTime.Add(time.Minute * 25).Format(time.Kitchen)
+		// wrap up
+		startTime := app.currentPom.startTime.Format(time.Kitchen)
+		finishTime := app.currentPom.startTime.Add(time.Minute * 25).Format(time.Kitchen)
 		res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
 	} else {
 		res.WriteHeader(http.StatusBadRequest)
@@ -76,9 +93,10 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 
 func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 	if app.runningPom {
-		mintuesLeft := (app.lastStartTime.Add(POM_TIME)).Sub(time.Now())
+		mintuesLeft := (app.currentPom.startTime.Add(POM_TIME)).Sub(time.Now())
 		res.WriteHeader(http.StatusConflict)
-		res.Write([]byte(fmt.Sprintf("Currently in pom, ~%d minutes left", int(mintuesLeft.Minutes()))))
+		// handle optional name better
+		res.Write([]byte(fmt.Sprintf("Currently in pom %s, ~%d minutes left", app.currentPom.name, int(mintuesLeft.Minutes()))))
 	} else {
 		success := app.results["Success"]
 		cancelled := app.results["Cancelled"]
@@ -108,6 +126,11 @@ func main() {
 
 	// eventbus for notifications
 	notifications := make(chan PomEvent)
+	db, err := bolt.Open("dev_db/_dev.db", 0600, nil)
+	if err != nil {
+		fmt.Errorf("Error opening db %s", err)
+	}
+	fmt.Println("DB", db)
 
 	app := &App{
 		runningPom: false,
