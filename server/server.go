@@ -14,13 +14,18 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const POM_TIME time.Duration = time.Minute * 25
+const POM_TIME time.Duration = time.Second * 5
 const OSX_CMD string = "osascript"
+
 const UID_BUCKET string = "__oswald_uid"
+const SUCCESS string = "success"
+const CANCELLED string = "cancelled"
+const PAUSED string = "paused"
 
 type PomStore interface {
-	StoreStatus(status string)
-	GetStatus(status string)
+	StoreStatus(status string, pom *Pom) error
+	// GetStatus(status string) error
+	GetStatusCount(status string) (int, error)
 }
 
 type BoltPomStore struct {
@@ -54,16 +59,48 @@ func NewBoltPomStore() PomStore {
 	if err != nil {
 		fmt.Errorf("Error opening db %s", err)
 	}
+	fmt.Println("our uuid", string(uid))
 	return &BoltPomStore{db: db, dbName: name, uid: uid}
 }
 
 // TODO: Implement these
-func (b *BoltPomStore) StoreStatus(status string) {
-
+func (b *BoltPomStore) StoreStatus(status string, pom *Pom) error { // REVIEW: Should pom be pomEvent?
+	return b.db.Update(func(tx *bolt.Tx) error {
+		fmt.Println("using uuid", string(b.uid), "for", status)
+		bucket, err := tx.CreateBucketIfNotExists(b.uid) // TODO: Really, clean this up...
+		if err != nil {
+			fmt.Println("Couldn't create bucket", status)
+			return err
+		}
+		statusBucket, err := bucket.CreateBucketIfNotExists([]byte(status))
+		if err != nil {
+			fmt.Println("Error with bucket storeStatus", status)
+			return err
+		}
+		nextId, _ := statusBucket.NextSequence()
+		sortableTime := []byte(pom.startTime.Format(time.RFC3339))
+		fmt.Println("Storing...", nextId)
+		return statusBucket.Put(sortableTime, itob(int(nextId)))
+	})
 }
 
-func (b *BoltPomStore) GetStatus(status string) {
-
+func (b *BoltPomStore) GetStatusCount(status string) (int, error) {
+	count := 0
+	b.db.View(func(tx *bolt.Tx) error {
+		fmt.Println("using uuid", string(b.uid), "for", status)
+		bucket := tx.Bucket(b.uid)
+		fmt.Println("Bucket", bucket, "status", status)
+		statusBucket := bucket.Bucket([]byte(status))
+		if statusBucket == nil { // Assume no count
+			fmt.Println("statusBucket", statusBucket)
+			return nil
+		}
+		key, value := statusBucket.Cursor().Last()
+		fmt.Println("key, value", string(key), value)
+		count = btoi(value)
+		return nil
+	})
+	return count, nil
 }
 
 type PomEvent struct {
@@ -125,6 +162,7 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 			<-app.currentPom.timer.C
 			app.runningPom = false
 			fmt.Println("Finished POM", app.currentPom.name)
+			app.pomStore.StoreStatus(SUCCESS, app.currentPom)
 			app.results["Success"] = app.results["Success"] + 1
 			app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
 			app.currentTimer = nil
@@ -151,6 +189,8 @@ func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 		success := app.results["Success"]
 		cancelled := app.results["Cancelled"]
 		paused := app.results["Paused"]
+		count, _ := app.pomStore.GetStatusCount(SUCCESS)
+		fmt.Println("Success status:", count)
 		res.WriteHeader(http.StatusOK)
 		res.Write([]byte(fmt.Sprintf("Success: %d, Cancelled: %d, Paused: %d", success, cancelled, paused)))
 	}
