@@ -10,98 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/boltdb/bolt"
 	"github.com/gorilla/mux"
 )
 
 const POM_TIME time.Duration = time.Second * 5
 const OSX_CMD string = "osascript"
 
-const UID_BUCKET string = "__oswald_uid"
 const SUCCESS string = "success"
 const CANCELLED string = "cancelled"
 const PAUSED string = "paused"
-
-type PomStore interface {
-	StoreStatus(status string, pom *Pom) error
-	// GetStatus(status string) error
-	GetStatusCount(status string) (int, error)
-}
-
-type BoltPomStore struct {
-	uid    []byte
-	db     *bolt.DB
-	dbName string
-}
-
-func NewBoltPomStore() PomStore {
-	name := "_dev.db"
-	db, err := bolt.Open(fmt.Sprintf("dev_db/%s", name), 0600, nil)
-	if err != nil {
-		fmt.Errorf("Error opening db %s", err)
-	}
-	var uid []byte
-	uidKey := []byte("uid")
-	// TODO: See if we can clean this up or move out
-	err = db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte(UID_BUCKET))
-		if err != nil {
-			return err
-		}
-		if existingUid := bucket.Get(uidKey); existingUid != nil {
-			uid = existingUid
-		} else {
-			uid = []byte(newUUID())
-			bucket.Put(uidKey, uid)
-		}
-		return nil
-	})
-	if err != nil {
-		fmt.Errorf("Error opening db %s", err)
-	}
-	fmt.Println("our uuid", string(uid))
-	return &BoltPomStore{db: db, dbName: name, uid: uid}
-}
-
-// TODO: Implement these
-func (b *BoltPomStore) StoreStatus(status string, pom *Pom) error { // REVIEW: Should pom be pomEvent?
-	return b.db.Update(func(tx *bolt.Tx) error {
-		fmt.Println("using uuid", string(b.uid), "for", status)
-		bucket, err := tx.CreateBucketIfNotExists(b.uid) // TODO: Really, clean this up...
-		if err != nil {
-			fmt.Println("Couldn't create bucket", status)
-			return err
-		}
-		statusBucket, err := bucket.CreateBucketIfNotExists([]byte(status))
-		if err != nil {
-			fmt.Println("Error with bucket storeStatus", status)
-			return err
-		}
-		nextId, _ := statusBucket.NextSequence()
-		sortableTime := []byte(pom.startTime.Format(time.RFC3339))
-		fmt.Println("Storing...", nextId)
-		return statusBucket.Put(sortableTime, itob(int(nextId)))
-	})
-}
-
-func (b *BoltPomStore) GetStatusCount(status string) (int, error) {
-	count := 0
-	b.db.View(func(tx *bolt.Tx) error {
-		fmt.Println("using uuid", string(b.uid), "for", status)
-		bucket := tx.Bucket(b.uid)
-		fmt.Println("Bucket", bucket, "status", status)
-		statusBucket := bucket.Bucket([]byte(status))
-		if statusBucket == nil { // Assume no count
-			fmt.Println("statusBucket", statusBucket)
-			return nil
-		}
-		key, value := statusBucket.Cursor().Last()
-		fmt.Println("key, value", string(key), value)
-		count = btoi(value)
-		return nil
-	})
-	return count, nil
-}
 
 type PomEvent struct {
 	eventType string
@@ -121,7 +38,6 @@ func NewPom(optionalName string) *Pom {
 
 type App struct {
 	runningPom bool
-	results    map[string]int // TODO: Remove once pomStore works
 	eventBus   chan PomEvent
 
 	pomStore      PomStore
@@ -130,14 +46,25 @@ type App struct {
 	lastStartTime time.Time
 }
 
+func (app *App) apiClearDB(res http.ResponseWriter, req *http.Request) {
+	err := app.pomStore.Clear()
+	if err != nil {
+		res.WriteHeader(http.StatusBadRequest)
+		res.Write([]byte("Failed to clear database"))
+	} else {
+		res.WriteHeader(http.StatusNoContent)
+		res.Write([]byte("Pom store cleared"))
+	}
+}
+
 func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 	if app.runningPom {
 		fmt.Println("Stopping Pom", app.currentPom.name)
 		// TODO: Should wrap these in helper functions
 		app.runningPom = false
+		app.pomStore.StoreStatus(CANCELLED, app.currentPom)
 		app.currentPom.timer.Stop()
 		app.currentPom = nil
-		app.results["Cancelled"] = app.results["Cancelled"] + 1
 		res.WriteHeader(http.StatusAccepted)
 		res.Write([]byte("Pom has been cancelled"))
 	} else {
@@ -163,7 +90,6 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 			app.runningPom = false
 			fmt.Println("Finished POM", app.currentPom.name)
 			app.pomStore.StoreStatus(SUCCESS, app.currentPom)
-			app.results["Success"] = app.results["Success"] + 1
 			app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
 			app.currentTimer = nil
 		}()
@@ -186,13 +112,20 @@ func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 		res.Write([]byte(fmt.Sprintf("Currently in pom %s, ~%d minutes left", app.currentPom.name, int(mintuesLeft.Minutes()))))
 	} else {
 		// TODO: Use pomStore
-		success := app.results["Success"]
-		cancelled := app.results["Cancelled"]
-		paused := app.results["Paused"]
-		count, _ := app.pomStore.GetStatusCount(SUCCESS)
-		fmt.Println("Success status:", count)
+		successCount, err := app.pomStore.GetStatusCount(SUCCESS) // TODO: Wrap in errGet interface?
+		if err != nil {
+			fmt.Println("Error getting status count", err)
+		}
+		cancelledCount, err := app.pomStore.GetStatusCount(CANCELLED) // TODO: Wrap in errGet interface?
+		if err != nil {
+			fmt.Println("Error getting status count", err)
+		}
+		pausedCount, err := app.pomStore.GetStatusCount(PAUSED) // TODO: Wrap in errGet interface?
+		if err != nil {
+			fmt.Println("Error getting status count", err)
+		}
 		res.WriteHeader(http.StatusOK)
-		res.Write([]byte(fmt.Sprintf("Success: %d, Cancelled: %d, Paused: %d", success, cancelled, paused)))
+		res.Write([]byte(fmt.Sprintf("Success: %d, Cancelled: %d, Paused: %d", successCount, cancelledCount, pausedCount)))
 	}
 }
 
@@ -223,7 +156,6 @@ func main() {
 		runningPom: false,
 		eventBus:   notifications,
 		pomStore:   pomStore,
-		results:    map[string]int{"Success": 0, "Cancelled": 0, "Paused": 0},
 	}
 	// TODO: move into app, create a 'start' or 'run' method
 	go func(eventChannel chan PomEvent) {
@@ -241,6 +173,7 @@ func main() {
 	r.HandleFunc("/start/{name}", app.apiStartHandler)
 	r.HandleFunc("/status", app.apiStatusHandler)
 	r.HandleFunc("/stop", app.apiStopHandler)
+	r.HandleFunc("/clear", app.apiClearDB)
 
 	// better way to handle this?
 	// also client should send SIGINT to shutdown
