@@ -16,6 +16,55 @@ import (
 
 const POM_TIME time.Duration = time.Minute * 25
 const OSX_CMD string = "osascript"
+const UID_BUCKET string = "__oswald_uid"
+
+type PomStore interface {
+	StoreStatus(status string)
+	GetStatus(status string)
+}
+
+type BoltPomStore struct {
+	uid    []byte
+	db     *bolt.DB
+	dbName string
+}
+
+func NewBoltPomStore() PomStore {
+	name := "_dev.db"
+	db, err := bolt.Open(fmt.Sprintf("dev_db/%s", name), 0600, nil)
+	if err != nil {
+		fmt.Errorf("Error opening db %s", err)
+	}
+	var uid []byte
+	uidKey := []byte("uid")
+	// TODO: See if we can clean this up or move out
+	err = db.Update(func(tx *bolt.Tx) error {
+		bucket, err := tx.CreateBucketIfNotExists([]byte(UID_BUCKET))
+		if err != nil {
+			return err
+		}
+		if existingUid := bucket.Get(uidKey); existingUid != nil {
+			uid = existingUid
+		} else {
+			uid = []byte(newUUID())
+			bucket.Put(uidKey, uid)
+		}
+		return nil
+	})
+	if err != nil {
+		fmt.Errorf("Error opening db %s", err)
+	}
+	return &BoltPomStore{db: db, dbName: name, uid: uid}
+}
+
+// TODO: Implement these
+func (b *BoltPomStore) StoreStatus(status string) {
+
+}
+
+func (b *BoltPomStore) GetStatus(status string) {
+
+}
 
 type PomEvent struct {
 	eventType string
@@ -35,9 +84,10 @@ func NewPom(optionalName string) *Pom {
 
 type App struct {
 	runningPom bool
-	results    map[string]int
+	results    map[string]int // TODO: Remove once pomStore works
 	eventBus   chan PomEvent
 
+	pomStore      PomStore
 	currentPom    *Pom
 	currentTimer  *time.Timer
 	lastStartTime time.Time
@@ -46,7 +96,7 @@ type App struct {
 func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 	if app.runningPom {
 		fmt.Println("Stopping Pom", app.currentPom.name)
-		// wrap in some helper functions?
+		// TODO: Should wrap these in helper functions
 		app.runningPom = false
 		app.currentPom.timer.Stop()
 		app.currentPom = nil
@@ -60,7 +110,7 @@ func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
-	if !app.runningPom { // has pom method?
+	if !app.runningPom { // TODO: add has pom method with helper functions
 		vars := mux.Vars(req)
 		optName, _ := vars["name"]
 
@@ -75,13 +125,12 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 			<-app.currentPom.timer.C
 			app.runningPom = false
 			fmt.Println("Finished POM", app.currentPom.name)
-			// wrapper for these? Moving to boltdb anyway so might as well wait
 			app.results["Success"] = app.results["Success"] + 1
 			app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
 			app.currentTimer = nil
 		}()
 		res.WriteHeader(http.StatusCreated)
-		// wrap up
+		// TODO: wrap up in time left func
 		startTime := app.currentPom.startTime.Format(time.Kitchen)
 		finishTime := app.currentPom.startTime.Add(time.Minute * 25).Format(time.Kitchen)
 		res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
@@ -95,9 +144,10 @@ func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 	if app.runningPom {
 		mintuesLeft := (app.currentPom.startTime.Add(POM_TIME)).Sub(time.Now())
 		res.WriteHeader(http.StatusConflict)
-		// handle optional name better
+		// TODO: Better output handling
 		res.Write([]byte(fmt.Sprintf("Currently in pom %s, ~%d minutes left", app.currentPom.name, int(mintuesLeft.Minutes()))))
 	} else {
+		// TODO: Use pomStore
 		success := app.results["Success"]
 		cancelled := app.results["Cancelled"]
 		paused := app.results["Paused"]
@@ -106,6 +156,7 @@ func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// TODO: Add interface for this
 type OSXNotifier struct {
 	baseCommand string
 	flag        string
@@ -124,20 +175,17 @@ func main() {
 	sigs := make(chan os.Signal)
 	done := make(chan struct{})
 
-	// eventbus for notifications
+	// TODO: Should the eventbus be more robust?
 	notifications := make(chan PomEvent)
-	db, err := bolt.Open("dev_db/_dev.db", 0600, nil)
-	if err != nil {
-		fmt.Errorf("Error opening db %s", err)
-	}
-	fmt.Println("DB", db)
+	pomStore := NewBoltPomStore()
 
 	app := &App{
 		runningPom: false,
 		eventBus:   notifications,
+		pomStore:   pomStore,
 		results:    map[string]int{"Success": 0, "Cancelled": 0, "Paused": 0},
 	}
-	// move into app, create a 'start' or 'run' method
+	// TODO: move into app, create a 'start' or 'run' method
 	go func(eventChannel chan PomEvent) {
 		for {
 			event := <-eventChannel
