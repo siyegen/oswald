@@ -25,7 +25,6 @@ type BoltPomStore struct {
 func createUser(db *bolt.DB) ([]byte, error) {
 	var uid []byte
 	uidKey := []byte(UID_BUCKET)
-	// TODO: See if we can clean this up or move out
 	err := db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(UID_BUCKET))
 		if err != nil {
@@ -50,11 +49,11 @@ func NewBoltPomStore() PomStore {
 	name := "_dev.db"
 	db, err := bolt.Open(fmt.Sprintf("dev_db/%s", name), 0600, nil)
 	if err != nil {
-		fmt.Errorf("Error opening db %s", err)
+		logger.Fatalf("Error opening db %s", err)
 	}
 	uid, err := createUser(db)
 	if err != nil {
-		fmt.Errorf("Error creating/storing uid %s", err)
+		logger.Fatalf("Error creating uid", err)
 	}
 	return &BoltPomStore{db: db, dbName: name, uid: uid}
 }
@@ -89,7 +88,7 @@ func (b *BoltPomStore) Clear() error {
 
 func (b *BoltPomStore) StoreStatus(status string, pom *Pom) error { // REVIEW: Should pom be pomEvent?
 	return b.db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists(b.GetUid()) // TODO: Really, clean this up...
+		bucket, err := tx.CreateBucketIfNotExists(b.GetUid())
 		if err != nil {
 			return err
 		}

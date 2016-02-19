@@ -14,12 +14,16 @@ import (
 	"github.com/gorilla/mux"
 )
 
+const LOG_PREFIX = "[Oswald]"
+
 const POM_TIME time.Duration = time.Second * 5
 const OSX_CMD string = "osascript"
 
 const SUCCESS string = "success"
 const CANCELLED string = "cancelled"
 const PAUSED string = "paused"
+
+var logger *log.Logger = log.New(os.Stdout, LOG_PREFIX, log.LstdFlags)
 
 type PomEvent struct {
 	eventType string
@@ -43,8 +47,24 @@ type App struct {
 
 	pomStore      PomStore
 	currentPom    *Pom
-	currentTimer  *time.Timer
 	lastStartTime time.Time
+}
+
+func (app *App) startPom(optName string) {
+	pom := NewPom(optName)
+	app.currentPom = pom
+	app.runningPom = true
+	app.currentPom.timer = time.NewTimer(POM_TIME)
+	app.currentPom.startTime = time.Now()
+
+	logger.Println("Starting Pom", app.currentPom.name)
+	go func() {
+		<-app.currentPom.timer.C
+		app.runningPom = false
+		logger.Println("Finished POM", app.currentPom.name)
+		app.pomStore.StoreStatus(SUCCESS, app.currentPom)
+		app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
+	}()
 }
 
 func (app *App) apiClearDB(res http.ResponseWriter, req *http.Request) {
@@ -60,7 +80,7 @@ func (app *App) apiClearDB(res http.ResponseWriter, req *http.Request) {
 
 func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 	if app.runningPom {
-		fmt.Println("Stopping Pom", app.currentPom.name)
+		logger.Println("Stopping Pom", app.currentPom.name)
 		// TODO: Should wrap these in helper functions
 		app.runningPom = false
 		app.pomStore.StoreStatus(CANCELLED, app.currentPom)
@@ -75,29 +95,15 @@ func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
-	if !app.runningPom { // TODO: add has pom method with helper functions
+	if !app.runningPom { // TODO: add inPom method with helper functions
 		vars := mux.Vars(req)
 		optName, _ := vars["name"]
 
-		pom := NewPom(optName)
-		app.currentPom = pom
-		app.runningPom = true
-		app.currentPom.timer = time.NewTimer(POM_TIME)
-		app.currentPom.startTime = time.Now()
-
-		fmt.Println("Starting Pom", app.currentPom.name)
-		go func() {
-			<-app.currentPom.timer.C
-			app.runningPom = false
-			fmt.Println("Finished POM", app.currentPom.name)
-			app.pomStore.StoreStatus(SUCCESS, app.currentPom)
-			app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
-			app.currentTimer = nil
-		}()
-		res.WriteHeader(http.StatusCreated)
+		app.startPom(optName)
 		// TODO: wrap up in time left func
 		startTime := app.currentPom.startTime.Format(time.Kitchen)
 		finishTime := app.currentPom.startTime.Add(time.Minute * 25).Format(time.Kitchen)
+		res.WriteHeader(http.StatusCreated)
 		res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
 	} else {
 		res.WriteHeader(http.StatusBadRequest)
@@ -112,18 +118,17 @@ func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 		// TODO: Better output handling
 		res.Write([]byte(fmt.Sprintf("Currently in pom %s, ~%d minutes left", app.currentPom.name, int(mintuesLeft.Minutes()))))
 	} else {
-		// TODO: Use pomStore
 		successCount, err := app.pomStore.GetStatusCount(SUCCESS) // TODO: Wrap in errGet interface?
 		if err != nil {
-			fmt.Println("Error getting status count", err)
+			logger.Printf("Error getting status count %s", err)
 		}
 		cancelledCount, err := app.pomStore.GetStatusCount(CANCELLED) // TODO: Wrap in errGet interface?
 		if err != nil {
-			fmt.Println("Error getting status count", err)
+			logger.Printf("Error getting status count %s", err)
 		}
 		pausedCount, err := app.pomStore.GetStatusCount(PAUSED) // TODO: Wrap in errGet interface?
 		if err != nil {
-			fmt.Println("Error getting status count", err)
+			logger.Printf("Error getting status count %s", err)
 		}
 		res.WriteHeader(http.StatusOK)
 		res.Write([]byte(fmt.Sprintf("Success: %d, Cancelled: %d, Paused: %d", successCount, cancelledCount, pausedCount)))
@@ -144,7 +149,7 @@ func (n *OSXNotifier) sendNotification(message, title string) error {
 }
 
 func main() {
-	log.Printf("%s", "starting up")
+	logger.Println("Starting Up")
 	osxNotifier := &OSXNotifier{OSX_CMD, "-e"}
 
 	sigs := make(chan os.Signal)
@@ -187,13 +192,13 @@ func main() {
 	// move into app start / settings?
 	listener, err := net.Listen("tcp", portString)
 	if err != nil {
-		fmt.Errorf("Error creating listener", err)
+		logger.Fatalf("Error creating listener %s", err.Error())
 	}
 
-	fmt.Println("Starting Server at:", portString)
 	go http.Serve(listener, r)
+	logger.Printf("Listening at %s", portString)
 
 	<-done
-	fmt.Println("\nShutting down")
+	logger.Println("Shutting down")
 
 }
