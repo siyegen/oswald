@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -143,6 +144,7 @@ func (n *OSXNotifier) sendNotification(message, title string) error {
 }
 
 func main() {
+	log.Printf("%s", "starting up")
 	osxNotifier := &OSXNotifier{OSX_CMD, "-e"}
 
 	sigs := make(chan os.Signal)
