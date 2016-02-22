@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 
 const LOG_PREFIX = "[Oswald]"
 
-const POM_TIME time.Duration = time.Second * 5
+const POM_TIME time.Duration = time.Minute * 25
 const OSX_CMD string = "osascript"
 
 const SUCCESS string = "success"
@@ -135,13 +136,23 @@ func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// TODO: Add interface for this
+type OSNotifier interface {
+	SendNotification(message, title string) error
+}
+
+type CmdLineNotifier struct{}
+
+func (n *CmdLineNotifier) SendNotification(message, title string) error {
+	fmt.Printf("[%s]: %s\n", message, title)
+	return nil
+}
+
 type OSXNotifier struct {
 	baseCommand string
 	flag        string
 }
 
-func (n *OSXNotifier) sendNotification(message, title string) error {
+func (n *OSXNotifier) SendNotification(message, title string) error {
 	fullMessage := fmt.Sprintf("display notification \"%s\" with title \"%s\" sound name \"Submarine\"", message, title)
 	cmdArgs := []string{n.flag, fullMessage}
 	_, err := exec.Command(n.baseCommand, cmdArgs...).Output()
@@ -150,7 +161,12 @@ func (n *OSXNotifier) sendNotification(message, title string) error {
 
 func main() {
 	logger.Println("Starting Up")
-	osxNotifier := &OSXNotifier{OSX_CMD, "-e"}
+	var notifier OSNotifier
+	if runtime.GOOS == "darwin" {
+		notifier = &OSXNotifier{OSX_CMD, "-e"}
+	} else {
+		notifier = &CmdLineNotifier{}
+	}
 
 	sigs := make(chan os.Signal)
 	done := make(chan struct{})
@@ -168,7 +184,7 @@ func main() {
 	go func(eventChannel chan PomEvent) {
 		for {
 			event := <-eventChannel
-			osxNotifier.sendNotification(event.message, event.title)
+			notifier.SendNotification(event.message, event.title)
 		}
 	}(notifications)
 
