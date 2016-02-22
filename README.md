@@ -11,9 +11,9 @@ WIP, don't expect it to work 100% yet
 - Follow build instructions below
 
 ## How to build
-Client: ```go build -o build/oswald ./client```
+Client: ```go build -o build/oswald ./oswald-client```
 
-Server ```go build -o build/oswald-server ./server```
+Server ```go build -o build/oswald-server ./oswald-server```
 
 ### How to run
 ```./oswald-server``` to start server
