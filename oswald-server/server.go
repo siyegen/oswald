@@ -17,14 +17,16 @@ import (
 
 const LOG_PREFIX = "[Oswald]"
 
-const POM_TIME time.Duration = time.Minute * 25
+const POM_TIME time.Duration = time.Second * 5
 const OSX_CMD string = "osascript"
 
-const SUCCESS string = "success"
-const CANCELLED string = "cancelled"
-const PAUSED string = "paused"
-
 var logger *log.Logger = log.New(os.Stdout, LOG_PREFIX, log.LstdFlags)
+
+type StatusString string
+
+const SUCCESS StatusString = "success"
+const CANCELLED StatusString = "cancelled"
+const PAUSED StatusString = "paused"
 
 type PomEvent struct {
 	eventType string
@@ -104,7 +106,7 @@ func (app *App) handleTimer() {
 			app.pomStore.StoreStatus(CANCELLED, *app.currentPom)
 			app.eventBus <- PomEvent{eventType: "Stopped", title: "Oswald", message: "Pom Cancelled"}
 		}
-		app.currentPom = nil
+		// app.currentPom = nil
 	}()
 }
 
