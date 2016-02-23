@@ -13,12 +13,12 @@ const UID_BUCKET string = "__oswald_uid"
 type PomStore interface {
 	StoreStatus(status StatusString, pom Pom) error
 	// GetStatus(status string) error
-	GetStatusCount(status StatusString) (int, error) // TODO: Replace status with type
+	GetStatusCount(status StatusString) (int, error)
 	Clear() error
 }
 
 type BoltPomStore struct {
-	uid    []byte
+	userId string
 	db     *bolt.DB
 	dbName string
 	sync.Mutex
@@ -38,13 +38,10 @@ func createUser(db *bolt.DB) ([]byte, error) {
 			uid = []byte(newUUID())
 			bucket.Put(uidKey, uid)
 		}
-		return nil
+		_, err = tx.CreateBucketIfNotExists(uid)
+		return err
 	})
 	return uid, err
-}
-
-func (b *BoltPomStore) GetUid() []byte {
-	return b.uid
 }
 
 func NewBoltPomStore() PomStore {
@@ -57,28 +54,26 @@ func NewBoltPomStore() PomStore {
 	if err != nil {
 		logger.Fatalf("Error creating uid", err)
 	}
-	return &BoltPomStore{db: db, dbName: name, uid: uid}
+	return &BoltPomStore{db: db, dbName: name, userId: string(uid)}
 }
 
 func (b *BoltPomStore) Clear() error {
 	// TODO: Some error checking
-	b.Lock()
 	err := b.db.Update(func(tx *bolt.Tx) error {
 		uidKey := []byte(UID_BUCKET)
-		fmt.Println("Using uidKey", string(uidKey))
+		logger.Println("Using uidKey", string(uidKey))
 		tx.DeleteBucket([]byte(SUCCESS))
-		fmt.Println("deleted success")
+		logger.Println("deleted success")
 		tx.DeleteBucket([]byte(CANCELLED))
-		fmt.Println("deleted cancelled")
+		logger.Println("deleted cancelled")
 		tx.DeleteBucket([]byte(PAUSED))
-		fmt.Println("deleted paused")
+		logger.Println("deleted paused")
 		tx.DeleteBucket(uidKey)
-		fmt.Println("deleted uidkey")
-		tx.DeleteBucket(b.GetUid())
-		fmt.Println("Deleted uid")
+		logger.Println("deleted uidkey")
+		tx.DeleteBucket([]byte(b.userId))
+		logger.Println("Deleted uid")
 		return nil
 	})
-	b.Unlock()
 	if err != nil {
 		return err
 	}
@@ -86,14 +81,14 @@ func (b *BoltPomStore) Clear() error {
 	if err != nil {
 		return err
 	}
-	b.uid = newUid
+	b.userId = string(newUid)
 	return nil
 }
 
 func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // REVIEW: Should pom be pomEvent?
-	b.Lock()
+	// b.Lock()
 	err := b.db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists(b.GetUid())
+		bucket, err := tx.CreateBucketIfNotExists([]byte(b.userId))
 		if err != nil {
 			return err
 		}
@@ -105,8 +100,7 @@ func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // REVI
 		sortableTime := []byte(pom.startTime.Format(time.RFC3339))
 		return statusBucket.Put(sortableTime, itob(int(nextId)))
 	})
-	fmt.Println("after storestatus")
-	b.Unlock()
+	// b.Unlock()
 	return err
 }
 
@@ -114,24 +108,23 @@ func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // REVI
 // based on whether or not a write transaction is ongoing
 func (b *BoltPomStore) GetStatusCount(status StatusString) (int, error) {
 	count := 0
-	b.Lock()
-	b.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(b.GetUid())
+	// b.Lock()
+	err := b.db.Update(func(tx *bolt.Tx) error {
+
+		bucket := tx.Bucket([]byte(b.userId))
 		if bucket == nil {
-			fmt.Println("Got a nil uid bucket for", string(b.GetUid()))
+			logger.Println("Got a nil uid bucket for", b.userId)
 			return nil // TODO: change to rich return
 		}
 		statusBucket := bucket.Bucket([]byte(status))
 		if statusBucket == nil { // Assume no count
-			fmt.Println("Got a nil status bucket for", status)
+			logger.Println("Got a nil status bucket for", status)
 			return nil
 		}
 		_, value := statusBucket.Cursor().Last()
 		count = btoi(value)
-		fmt.Println("uid", string(b.GetUid()))
-		fmt.Printf("value %+v, count %d for statusBucket %s\n\n", value, count, status)
 		return nil
 	})
-	b.Unlock()
-	return count, nil
+	// b.Unlock()
+	return count, err
 }
