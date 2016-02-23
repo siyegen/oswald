@@ -17,7 +17,7 @@ import (
 
 const LOG_PREFIX = "[Oswald]"
 
-const POM_TIME time.Duration = time.Second * 25
+const POM_TIME time.Duration = time.Minute * 25
 const OSX_CMD string = "osascript"
 
 const SUCCESS string = "success"
@@ -185,7 +185,7 @@ type OSNotifier interface {
 type CmdLineNotifier struct{}
 
 func (n *CmdLineNotifier) SendNotification(message, title string) error {
-	fmt.Printf("[%s]: %s\n", message, title)
+	fmt.Printf("[%s]: %s\n", title, message)
 	return nil
 }
 
