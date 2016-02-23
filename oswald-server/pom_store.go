@@ -10,7 +10,7 @@ import (
 const UID_BUCKET string = "__oswald_uid"
 
 type PomStore interface {
-	StoreStatus(status string, pom *Pom) error
+	StoreStatus(status string, pom Pom) error
 	// GetStatus(status string) error
 	GetStatusCount(status string) (int, error) // TODO: Replace status with type
 	Clear() error
@@ -86,7 +86,7 @@ func (b *BoltPomStore) Clear() error {
 	return nil
 }
 
-func (b *BoltPomStore) StoreStatus(status string, pom *Pom) error { // REVIEW: Should pom be pomEvent?
+func (b *BoltPomStore) StoreStatus(status string, pom Pom) error { // REVIEW: Should pom be pomEvent?
 	return b.db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists(b.GetUid())
 		if err != nil {
@@ -102,6 +102,8 @@ func (b *BoltPomStore) StoreStatus(status string, pom *Pom) error { // REVIEW: S
 	})
 }
 
+// NOTE: Read-only transaction, will never be blocked but can be off
+// based on whether or not a write transaction is ongoing
 func (b *BoltPomStore) GetStatusCount(status string) (int, error) {
 	count := 0
 	b.db.View(func(tx *bolt.Tx) error {
