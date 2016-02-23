@@ -17,7 +17,7 @@ import (
 
 const LOG_PREFIX = "[Oswald]"
 
-const POM_TIME time.Duration = time.Minute * 25
+const POM_TIME time.Duration = time.Second * 25
 const OSX_CMD string = "osascript"
 
 const SUCCESS string = "success"
@@ -36,10 +36,51 @@ type Pom struct {
 	startTime time.Time
 	name      string
 	timer     *time.Timer
+	running   bool
+
+	done chan struct{}
+	stop chan struct{}
 }
 
 func NewPom(optionalName string) *Pom {
-	return &Pom{name: optionalName}
+	return &Pom{
+		name: optionalName,
+		done: make(chan struct{}),
+		stop: make(chan struct{}),
+	}
+}
+
+func (p *Pom) Start() {
+	p.running = true
+	p.timer = time.NewTimer(POM_TIME)
+	p.startTime = time.Now()
+
+	logger.Println("Starting Pom", p.name)
+	go func() {
+		logger.Println("Waiting in go func for pom")
+		select {
+		case <-p.timer.C:
+			logger.Println("Finished Pom")
+			p.running = false
+			p.done <- struct{}{}
+		case <-p.stop:
+			logger.Println("Stopped Pom")
+			p.running = false
+			p.done <- struct{}{}
+		}
+		// app.runningPom = false
+		// logger.Println("Finished POM", app.currentPom.name)
+		// app.pomStore.StoreStatus(SUCCESS, app.currentPom)
+		// app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
+	}()
+}
+
+func (p *Pom) Stop() {
+	p.running = false
+	p.timer.Stop()
+
+	logger.Println("Stopping Pom", p.name)
+	p.stop <- struct{}{}
 }
 
 type App struct {
@@ -55,17 +96,25 @@ func (app *App) startPom(optName string) {
 	pom := NewPom(optName)
 	app.currentPom = pom
 	app.runningPom = true
-	app.currentPom.timer = time.NewTimer(POM_TIME)
-	app.currentPom.startTime = time.Now()
+	// app.runningPom = true
+	// app.currentPom.timer = time.NewTimer(POM_TIME)
+	// app.currentPom.startTime = time.Now()
 
 	logger.Println("Starting Pom", app.currentPom.name)
+	pom.Start()
 	go func() {
-		<-app.currentPom.timer.C
+		<-pom.done
 		app.runningPom = false
-		logger.Println("Finished POM", app.currentPom.name)
-		app.pomStore.StoreStatus(SUCCESS, app.currentPom)
+		logger.Println("Finished Pom, from startPom method", pom.name)
 		app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
 	}()
+	// go func() {
+	// 	<-app.currentPom.timer.C
+	// 	app.runningPom = false
+	// 	logger.Println("Finished POM", app.currentPom.name)
+	// 	app.pomStore.StoreStatus(SUCCESS, app.currentPom)
+	// 	app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
+	// }()
 }
 
 func (app *App) apiClearDB(res http.ResponseWriter, req *http.Request) {
@@ -83,9 +132,10 @@ func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 	if app.runningPom {
 		logger.Println("Stopping Pom", app.currentPom.name)
 		// TODO: Should wrap these in helper functions
-		app.runningPom = false
-		app.pomStore.StoreStatus(CANCELLED, app.currentPom)
-		app.currentPom.timer.Stop()
+		// app.runningPom = false
+		// app.pomStore.StoreStatus(CANCELLED, app.currentPom)
+		// app.currentPom.timer.Stop()
+		app.currentPom.stop <- struct{}{}
 		app.currentPom = nil
 		res.WriteHeader(http.StatusAccepted)
 		res.Write([]byte("Pom has been cancelled"))
