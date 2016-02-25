@@ -10,7 +10,7 @@ import (
 const UID_BUCKET string = "__oswald_uid"
 
 type PomStore interface {
-	StoreStatus(status StatusString, pom Pom) error
+	StoreStatus(status StatusString, pom PomEvent) error
 	GetStatusCount(status StatusString) (int, error)
 	Clear() error
 }
@@ -77,7 +77,7 @@ func (b *BoltPomStore) Clear() error {
 	return nil
 }
 
-func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // TODO: Should pom be pomEvent?
+func (b *BoltPomStore) StoreStatus(status StatusString, pom PomEvent) error {
 	err := b.db.Update(func(tx *bolt.Tx) error {
 		userId := []byte(b.userId)
 		bucket, err := tx.CreateBucketIfNotExists(userId)
@@ -89,7 +89,7 @@ func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // TODO
 			return err
 		}
 		nextId, _ := statusBucket.NextSequence()
-		sortableTime := []byte(pom.startTime.Format(time.RFC3339))
+		sortableTime := []byte(pom.time.Format(time.RFC3339))
 		return statusBucket.Put(sortableTime, itob(int(nextId)))
 	})
 	return err

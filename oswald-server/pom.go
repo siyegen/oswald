@@ -61,7 +61,7 @@ func (p *Pom) Start() bool {
 }
 
 func (p *Pom) Stop() bool {
-	if p.State() == Running {
+	if p.State() == Running || p.State() == Paused {
 		p.timer.Stop()
 
 		logger.Println("Stopping Pom", p.name)

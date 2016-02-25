@@ -16,7 +16,7 @@ import (
 )
 
 const LOG_PREFIX string = "[Oswald]"
-const POM_TIME time.Duration = time.Minute * 25
+const POM_TIME time.Duration = time.Minute * 1
 
 const OSX_CMD string = "osascript"
 
@@ -29,9 +29,21 @@ const CANCELLED StatusString = "cancelled"
 const PAUSED StatusString = "paused"
 
 type PomEvent struct {
+	name      string
 	eventType string
 	title     string
 	message   string
+	time      time.Time
+}
+
+func NewPomEvent(eventType, title, message, name string, time time.Time) PomEvent {
+	return PomEvent{
+		name:      name,
+		eventType: eventType,
+		title:     title,
+		message:   message,
+		time:      time,
+	}
 }
 
 type App struct {
@@ -56,12 +68,14 @@ func (app *App) startTimerHandler() {
 		success := <-app.currentPom.done
 		if success {
 			logger.Println("Finished Pom, from startPom method", app.currentPom.name)
-			app.pomStore.StoreStatus(SUCCESS, *app.currentPom)
-			app.eventBus <- PomEvent{eventType: "Success", title: "Oswald", message: "Pom Finished"}
+			event := NewPomEvent("Success", "Oswald", "Pom Finished", app.currentPom.name, time.Now())
+			app.pomStore.StoreStatus(SUCCESS, event)
+			app.eventBus <- event
 		} else {
 			logger.Println("Cancelled Pom, from startPom method", app.currentPom.name)
-			app.pomStore.StoreStatus(CANCELLED, *app.currentPom)
-			app.eventBus <- PomEvent{eventType: "Stopped", title: "Oswald", message: "Pom Cancelled"}
+			event := NewPomEvent("Success", "Oswald", "Pom Finished", app.currentPom.name, time.Now())
+			app.pomStore.StoreStatus(CANCELLED, event)
+			app.eventBus <- event
 		}
 	}()
 }
@@ -98,10 +112,10 @@ func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func (app *App) apiPauseHandler(res http.ResponseWriter, req *http.Request) {
-	// Pause only if running
 	if app.currentPom.State() == Running {
 		app.currentPom.Pause()
-		app.pomStore.StoreStatus(PAUSED, *app.currentPom)
+		event := NewPomEvent("Paused", "Oswald", "Pom Paused", app.currentPom.name, time.Now())
+		app.pomStore.StoreStatus(PAUSED, event)
 		res.WriteHeader(http.StatusAccepted)
 		res.Write([]byte("Pom has been paused"))
 	} else if app.currentPom.State() == Paused {
