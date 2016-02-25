@@ -52,24 +52,27 @@ func (p *Pom) TimeLeft() time.Duration {
 }
 
 func (p *Pom) Start() bool {
-	p.state = Running
-	p.startTime = time.Now()
-	p.createTimerFor(p.pomLength)
-	return true
+	if p.State() == None {
+		p.startTime = time.Now()
+		p.createTimerFor(p.pomLength)
+		return true
+	}
+	return false
 }
 
 func (p *Pom) Stop() bool {
-	p.state = None
-	p.timer.Stop()
+	if p.State() == Running {
+		p.timer.Stop()
 
-	logger.Println("Stopping Pom", p.name)
-	p.stop <- struct{}{}
-	return true
+		logger.Println("Stopping Pom", p.name)
+		p.stop <- struct{}{}
+		return true
+	}
+	return false
 }
 
 func (p *Pom) Pause() bool {
-	if p.state == Running { // if running then pause
-		p.state = Paused
+	if p.State() == Running {
 		p.timer.Stop()
 		p.pauseTime = time.Now()
 		logger.Println("Paused, time left:", p.TimeLeft())
@@ -80,12 +83,10 @@ func (p *Pom) Pause() bool {
 }
 
 func (p *Pom) Resume() bool {
-	if p.state == Paused { // if running then pause
-		// get timeSpentPaused
+	if p.State() == Paused {
 		p.timeSpentPaused += time.Now().Sub(p.pauseTime)
-		// figure out duration left and restart timer
 		p.createTimerFor(p.TimeLeft())
-		p.state = Running
+		return true
 	}
 	return false
 }
@@ -100,16 +101,19 @@ func (p *Pom) State() PomState {
 // TODO: Move all state changes here
 func (p *Pom) createTimerFor(duration time.Duration) {
 	p.timer = time.NewTimer(duration)
+	p.state = Running
 	go func() {
 		select {
 		case <-p.pause:
 			logger.Println("Paused Pom")
+			p.state = Paused
 		case <-p.timer.C:
 			logger.Println("Finished Pom")
 			p.state = None
 			p.done <- true
 		case <-p.stop:
 			logger.Println("Stopped Pom")
+			p.state = None
 			p.done <- false
 		}
 	}()
