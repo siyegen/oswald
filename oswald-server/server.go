@@ -51,7 +51,7 @@ func (app *App) inPom() bool {
 	}
 }
 
-func (app *App) handleTimer() {
+func (app *App) startTimerHandler() {
 	go func() {
 		success := <-app.currentPom.done
 		if success {
@@ -71,10 +71,9 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 		vars := mux.Vars(req)
 		optName, _ := vars["name"]
 
-		// Methods for starting a pom
 		app.currentPom = NewPom(optName, POM_TIME)
 		app.currentPom.Start()
-		app.handleTimer()
+		app.startTimerHandler()
 
 		// TODO: Cleanup into formatter
 		startTime := app.currentPom.startTime.Format(time.Kitchen)

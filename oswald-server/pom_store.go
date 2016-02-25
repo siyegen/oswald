@@ -11,7 +11,6 @@ const UID_BUCKET string = "__oswald_uid"
 
 type PomStore interface {
 	StoreStatus(status StatusString, pom Pom) error
-	// GetStatus(status string) error
 	GetStatusCount(status StatusString) (int, error)
 	Clear() error
 }
@@ -20,14 +19,13 @@ type BoltPomStore struct {
 	userId string
 	db     *bolt.DB
 	dbName string
-	// sync.Mutex
 }
 
 func createUser(db *bolt.DB) ([]byte, error) {
 	var uid []byte
 	uidKey := []byte(UID_BUCKET)
 	err := db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte(UID_BUCKET))
+		bucket, err := tx.CreateBucketIfNotExists(uidKey)
 		if err != nil {
 			return err
 		}
@@ -60,17 +58,12 @@ func (b *BoltPomStore) Clear() error {
 	// TODO: Some error checking
 	err := b.db.Update(func(tx *bolt.Tx) error {
 		uidKey := []byte(UID_BUCKET)
-		logger.Println("Using uidKey", string(uidKey))
+		userId := []byte(b.userId)
 		tx.DeleteBucket([]byte(SUCCESS))
-		logger.Println("deleted success")
 		tx.DeleteBucket([]byte(CANCELLED))
-		logger.Println("deleted cancelled")
 		tx.DeleteBucket([]byte(PAUSED))
-		logger.Println("deleted paused")
 		tx.DeleteBucket(uidKey)
-		logger.Println("deleted uidkey")
-		tx.DeleteBucket([]byte(b.userId))
-		logger.Println("Deleted uid")
+		tx.DeleteBucket(userId)
 		return nil
 	})
 	if err != nil {
@@ -84,9 +77,10 @@ func (b *BoltPomStore) Clear() error {
 	return nil
 }
 
-func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // REVIEW: Should pom be pomEvent?
+func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // TODO: Should pom be pomEvent?
 	err := b.db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte(b.userId))
+		userId := []byte(b.userId)
+		bucket, err := tx.CreateBucketIfNotExists(userId)
 		if err != nil {
 			return err
 		}
@@ -106,15 +100,12 @@ func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // REVI
 func (b *BoltPomStore) GetStatusCount(status StatusString) (int, error) {
 	count := 0
 	err := b.db.Update(func(tx *bolt.Tx) error {
-
 		bucket := tx.Bucket([]byte(b.userId))
 		if bucket == nil {
-			logger.Println("Got a nil uid bucket for", b.userId)
-			return nil // TODO: change to rich return
+			return nil
 		}
 		statusBucket := bucket.Bucket([]byte(status))
-		if statusBucket == nil { // Assume no count
-			logger.Println("Got a nil status bucket for", status)
+		if statusBucket == nil {
 			return nil
 		}
 		_, value := statusBucket.Cursor().Last()
