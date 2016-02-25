@@ -135,7 +135,7 @@ func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 	} else if app.currentPom.State() == Paused {
 		res.WriteHeader(http.StatusConflict)
 		// TODO: Better output handling
-		res.Write([]byte("Pom currently paused"))
+		res.Write([]byte(fmt.Sprintf("Pom currently paused, %s left", app.currentPom.TimeLeft())))
 	} else {
 		successCount, err := app.pomStore.GetStatusCount(SUCCESS) // TODO: Wrap in errGet interface?
 		if err != nil {

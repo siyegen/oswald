@@ -98,7 +98,6 @@ func (p *Pom) State() PomState {
 	return p.state
 }
 
-// TODO: Move all state changes here
 func (p *Pom) createTimerFor(duration time.Duration) {
 	p.timer = time.NewTimer(duration)
 	p.state = Running
