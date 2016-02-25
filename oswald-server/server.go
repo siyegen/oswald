@@ -15,9 +15,9 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const LOG_PREFIX = "[Oswald]"
+const LOG_PREFIX string = "[Oswald]"
+const POM_TIME time.Duration = time.Minute * 25
 
-const POM_TIME time.Duration = time.Second * 5
 const OSX_CMD string = "osascript"
 
 var logger *log.Logger = log.New(os.Stdout, LOG_PREFIX, log.LstdFlags)
@@ -34,69 +34,26 @@ type PomEvent struct {
 	message   string
 }
 
-type Pom struct {
-	startTime time.Time
-	name      string
-	timer     *time.Timer
-	running   bool
-
-	done chan bool
-	stop chan struct{}
-}
-
-func NewPom(optionalName string) *Pom {
-	return &Pom{
-		name: optionalName,
-		done: make(chan bool),
-		stop: make(chan struct{}),
-	}
-}
-
-func (p *Pom) FinishTime() time.Time {
-	return p.startTime.Add(POM_TIME)
-}
-
-func (p *Pom) Start() {
-	p.running = true
-	p.timer = time.NewTimer(POM_TIME)
-	p.startTime = time.Now()
-
-	logger.Println("Starting Pom", p.name)
-	go func() {
-		select {
-		case <-p.timer.C:
-			logger.Println("Finished Pom")
-			p.running = false
-			p.done <- true
-		case <-p.stop:
-			logger.Println("Stopped Pom")
-			p.running = false
-			p.done <- false
-		}
-	}()
-}
-
-func (p *Pom) Stop() {
-	p.running = false
-	p.timer.Stop()
-
-	logger.Println("Stopping Pom", p.name)
-	p.stop <- struct{}{}
-}
-
 type App struct {
-	runningPom bool
-	eventBus   chan PomEvent
+	eventBus chan PomEvent
 
 	pomStore      PomStore
 	currentPom    *Pom
 	lastStartTime time.Time
 }
 
+func (app *App) inPom() bool {
+	state := app.currentPom.State()
+	if state == Running || state == Paused {
+		return true
+	} else {
+		return false
+	}
+}
+
 func (app *App) handleTimer() {
 	go func() {
 		success := <-app.currentPom.done
-		app.runningPom = false
 		if success {
 			logger.Println("Finished Pom, from startPom method", app.currentPom.name)
 			app.pomStore.StoreStatus(SUCCESS, *app.currentPom)
@@ -106,24 +63,20 @@ func (app *App) handleTimer() {
 			app.pomStore.StoreStatus(CANCELLED, *app.currentPom)
 			app.eventBus <- PomEvent{eventType: "Stopped", title: "Oswald", message: "Pom Cancelled"}
 		}
-		// app.currentPom = nil
 	}()
 }
 
-func (app *App) startPom(optName string) {
-	app.currentPom = NewPom(optName)
-	app.runningPom = true
-
-	app.currentPom.Start()
-	app.handleTimer()
-}
-
 func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
-	if !app.runningPom { // TODO: add inPom method with helper functions
+	if !app.inPom() {
 		vars := mux.Vars(req)
 		optName, _ := vars["name"]
 
-		app.startPom(optName)
+		// Methods for starting a pom
+		app.currentPom = NewPom(optName, POM_TIME)
+		app.currentPom.Start()
+		app.handleTimer()
+
+		// TODO: Cleanup into formatter
 		startTime := app.currentPom.startTime.Format(time.Kitchen)
 		finishTime := app.currentPom.FinishTime().Format(time.Kitchen)
 		res.WriteHeader(http.StatusCreated)
@@ -135,13 +88,30 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
-	if app.runningPom {
+	if app.inPom() {
 		app.currentPom.Stop()
 		res.WriteHeader(http.StatusAccepted)
 		res.Write([]byte("Pom has been cancelled"))
 	} else {
 		res.WriteHeader(http.StatusBadRequest)
 		res.Write([]byte("No current pom to cancel"))
+	}
+}
+
+func (app *App) apiPauseHandler(res http.ResponseWriter, req *http.Request) {
+	// Pause only if running
+	if app.currentPom.State() == Running {
+		app.currentPom.Pause()
+		app.pomStore.StoreStatus(PAUSED, *app.currentPom)
+		res.WriteHeader(http.StatusAccepted)
+		res.Write([]byte("Pom has been paused"))
+	} else if app.currentPom.State() == Paused {
+		app.currentPom.Resume()
+		res.WriteHeader(http.StatusAccepted)
+		res.Write([]byte("Resuming pom"))
+	} else {
+		res.WriteHeader(http.StatusConflict)
+		res.Write([]byte("No pom to pause"))
 	}
 }
 
@@ -157,11 +127,15 @@ func (app *App) apiClearDB(res http.ResponseWriter, req *http.Request) {
 }
 
 func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
-	if app.runningPom {
-		mintuesLeft := (app.currentPom.startTime.Add(POM_TIME)).Sub(time.Now())
+	if app.currentPom.State() == Running {
 		res.WriteHeader(http.StatusConflict)
 		// TODO: Better output handling
-		res.Write([]byte(fmt.Sprintf("Currently in pom %s, ~%d minutes left", app.currentPom.name, int(mintuesLeft.Minutes()))))
+		minutesLeft := app.currentPom.TimeLeft().Minutes()
+		res.Write([]byte(fmt.Sprintf("Currently in pom %s, ~%d minutes left", app.currentPom.name, int(minutesLeft))))
+	} else if app.currentPom.State() == Paused {
+		res.WriteHeader(http.StatusConflict)
+		// TODO: Better output handling
+		res.Write([]byte("Pom currently paused"))
 	} else {
 		successCount, err := app.pomStore.GetStatusCount(SUCCESS) // TODO: Wrap in errGet interface?
 		if err != nil {
@@ -220,9 +194,8 @@ func main() {
 	pomStore := NewBoltPomStore()
 
 	app := &App{
-		runningPom: false,
-		eventBus:   notifications,
-		pomStore:   pomStore,
+		eventBus: notifications,
+		pomStore: pomStore,
 	}
 	// TODO: move into app, create a 'start' or 'run' method
 	go func(eventChannel chan PomEvent) {
@@ -240,6 +213,7 @@ func main() {
 	r.HandleFunc("/start/{name}", app.apiStartHandler)
 	r.HandleFunc("/status", app.apiStatusHandler)
 	r.HandleFunc("/stop", app.apiStopHandler)
+	r.HandleFunc("/pause", app.apiPauseHandler)
 	r.HandleFunc("/clear", app.apiClearDB)
 
 	// better way to handle this?

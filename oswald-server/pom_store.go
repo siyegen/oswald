@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -21,7 +20,7 @@ type BoltPomStore struct {
 	userId string
 	db     *bolt.DB
 	dbName string
-	sync.Mutex
+	// sync.Mutex
 }
 
 func createUser(db *bolt.DB) ([]byte, error) {
@@ -86,7 +85,6 @@ func (b *BoltPomStore) Clear() error {
 }
 
 func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // REVIEW: Should pom be pomEvent?
-	// b.Lock()
 	err := b.db.Update(func(tx *bolt.Tx) error {
 		bucket, err := tx.CreateBucketIfNotExists([]byte(b.userId))
 		if err != nil {
@@ -100,7 +98,6 @@ func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // REVI
 		sortableTime := []byte(pom.startTime.Format(time.RFC3339))
 		return statusBucket.Put(sortableTime, itob(int(nextId)))
 	})
-	// b.Unlock()
 	return err
 }
 
@@ -108,7 +105,6 @@ func (b *BoltPomStore) StoreStatus(status StatusString, pom Pom) error { // REVI
 // based on whether or not a write transaction is ongoing
 func (b *BoltPomStore) GetStatusCount(status StatusString) (int, error) {
 	count := 0
-	// b.Lock()
 	err := b.db.Update(func(tx *bolt.Tx) error {
 
 		bucket := tx.Bucket([]byte(b.userId))
@@ -125,6 +121,5 @@ func (b *BoltPomStore) GetStatusCount(status StatusString) (int, error) {
 		count = btoi(value)
 		return nil
 	})
-	// b.Unlock()
 	return count, err
 }
