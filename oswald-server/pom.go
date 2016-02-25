@@ -63,8 +63,6 @@ func (p *Pom) Start() bool {
 func (p *Pom) Stop() bool {
 	if p.State() == Running || p.State() == Paused {
 		p.timer.Stop()
-
-		logger.Println("Stopping Pom", p.name)
 		p.stop <- struct{}{}
 		return true
 	}
@@ -102,18 +100,20 @@ func (p *Pom) createTimerFor(duration time.Duration) {
 	p.timer = time.NewTimer(duration)
 	p.state = Running
 	go func() {
-		select {
-		case <-p.pause:
-			logger.Println("Paused Pom")
-			p.state = Paused
-		case <-p.timer.C:
-			logger.Println("Finished Pom")
-			p.state = None
-			p.done <- true
-		case <-p.stop:
-			logger.Println("Stopped Pom")
-			p.state = None
-			p.done <- false
+		for p.State() != None {
+			select {
+			case <-p.pause:
+				logger.Println("Paused Pom")
+				p.state = Paused
+			case <-p.timer.C:
+				logger.Println("Finished Pom")
+				p.state = None
+				p.done <- true
+			case <-p.stop:
+				logger.Println("Stopped Pom")
+				p.state = None
+				p.done <- false
+			}
 		}
 	}()
 }
