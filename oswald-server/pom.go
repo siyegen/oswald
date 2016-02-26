@@ -36,28 +36,15 @@ type PomMessage struct {
 type pomJson PomMessage
 
 func (pm *PomMessage) MarshalJSON() ([]byte, error) {
-	logger.Println("hi Marshal")
 	return json.Marshal(&struct {
 		State string `json:"state"`
+		// TimeSpentPaused string `json:"total_time_paused,number"`
 		*pomJson
 	}{
 		State:   pm.State.String(),
 		pomJson: (*pomJson)(pm),
+		// TimeSpentPaused: pm.TimeSpentPaused.Minutes(),
 	})
-}
-
-func (p *Pom) ToPomMessage() *PomMessage {
-	pomMessage := &PomMessage{
-		State:           p.state,
-		StartTime:       p.startTime,
-		TimeSpentPaused: p.timeSpentPaused,
-		Name:            p.name,
-		FinishTime:      p.FinishTime(),
-	}
-	if p.State() == Paused {
-		pomMessage.TimeSpentPaused += time.Now().Sub(p.pauseTime)
-	}
-	return pomMessage
 }
 
 type Pom struct {
@@ -89,8 +76,27 @@ func NewPom(optionalName string, duration time.Duration) *Pom {
 	}
 }
 
+func (p *Pom) ToPomMessage(message string) *PomMessage {
+	logger.Println("Start Time", p.startTime)
+	logger.Println("Finish Time", p.FinishTime())
+	logger.Println("Time Left", p.TimeLeft())
+	pomMessage := &PomMessage{
+		State:           p.state,
+		StartTime:       p.startTime,
+		TimeSpentPaused: p.timeSpentPaused,
+		Name:            p.name,
+		FinishTime:      p.FinishTime(),
+		Message:         message,
+	}
+	if p.State() == Paused {
+		pomMessage.TimeSpentPaused += time.Now().Sub(p.pauseTime)
+	}
+	return pomMessage
+}
+
+// FIXME: Not working correctly in Running state
 func (p *Pom) FinishTime() time.Time {
-	return p.startTime.Add(p.TimeLeft())
+	return time.Now().Add(p.TimeLeft())
 }
 
 func (p *Pom) TimeLeft() time.Duration {
@@ -132,8 +138,10 @@ func (p *Pom) Pause() bool {
 
 func (p *Pom) Resume() bool {
 	if p.State() == Paused {
+		timeLeft := p.TimeLeft()
+		logger.Println("Resuming with", timeLeft)
+		p.createTimerFor(timeLeft)
 		p.timeSpentPaused += time.Now().Sub(p.pauseTime)
-		p.createTimerFor(p.TimeLeft())
 		return true
 	}
 	return false
@@ -148,6 +156,7 @@ func (p *Pom) State() PomState {
 
 func (p *Pom) createTimerFor(duration time.Duration) {
 	p.timer = time.NewTimer(duration)
+	logger.Println("NewTimer for", duration)
 	p.state = Running
 	go func() {
 		for p.State() != None {

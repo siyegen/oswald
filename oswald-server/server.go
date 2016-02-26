@@ -17,7 +17,7 @@ import (
 )
 
 const LOG_PREFIX string = "[Oswald]"
-const POM_TIME time.Duration = time.Minute * 1
+const POM_TIME time.Duration = time.Second * 30
 
 const OSX_CMD string = "osascript"
 
@@ -65,21 +65,11 @@ func (app *App) startTimerHandler() {
 			app.eventBus <- event
 		} else {
 			logger.Println("Cancelled Pom, from startPom method", app.currentPom.name)
-			event := NewPomEvent("Success", "Oswald", "Pom Finished", app.currentPom.name, time.Now())
+			event := NewPomEvent("Cancelled", "Oswald", "Pom Cancelled", app.currentPom.name, time.Now())
 			app.pomStore.StoreStatus(CANCELLED, event)
 			app.eventBus <- event
 		}
 	}()
-}
-
-func jsonStart() {
-	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
-	// state
-	// start time
-	// finish time
-	// pause time -na
-	// message
-	// name
 }
 
 func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
@@ -91,47 +81,24 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 		app.currentPom.Start()
 		app.startTimerHandler()
 
-		// TODO: Cleanup into formatter
-		// startTime := app.currentPom.startTime.Format(time.Kitchen)
-		// finishTime := app.currentPom.FinishTime().Format(time.Kitchen)
-		res.WriteHeader(http.StatusCreated)
-		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage())
 		// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
+		res.WriteHeader(http.StatusCreated)
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("Started Pom"))
 	} else {
 		res.WriteHeader(http.StatusBadRequest)
-		res.Write([]byte("Pom already running, pause or cancel first"))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("Currently in Pom"))
 	}
-}
-
-func jsonCancel() {
-	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
-	// state
-	// start time
-	// finish time -na
-	// timeSpentPaused
-	// message
-	// name
 }
 
 func (app *App) apiCancelHandler(res http.ResponseWriter, req *http.Request) {
 	if app.currentPom.State() == Running || app.currentPom.State() == Paused {
 		app.currentPom.Stop()
 		res.WriteHeader(http.StatusAccepted)
-		res.Write([]byte("Pom has been cancelled"))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("Cancelled Pom"))
 	} else {
 		res.WriteHeader(http.StatusBadRequest)
-		res.Write([]byte("No current pom to cancel"))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("No Pom to cancel"))
 	}
-}
-
-func jsonPause() {
-	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
-	// state
-	// start time
-	// finish time
-	// pause time
-	// message
-	// name
 }
 
 func (app *App) apiPauseHandler(res http.ResponseWriter, req *http.Request) {
@@ -140,31 +107,21 @@ func (app *App) apiPauseHandler(res http.ResponseWriter, req *http.Request) {
 		event := NewPomEvent("Paused", "Oswald", "Pom Paused", app.currentPom.name, time.Now())
 		app.pomStore.StoreStatus(PAUSED, event)
 		res.WriteHeader(http.StatusAccepted)
-		res.Write([]byte("Pom has been paused"))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("Paused Pom"))
 	} else {
 		res.WriteHeader(http.StatusConflict)
-		res.Write([]byte("No pom to pause"))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("No Pom to pause"))
 	}
-}
-
-func jsonResume() {
-	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
-	// state
-	// start time
-	// finish time
-	// timeSpentPaused
-	// message
-	// name
 }
 
 func (app *App) apiResumeHandler(res http.ResponseWriter, req *http.Request) {
 	if app.currentPom.State() == Paused {
 		app.currentPom.Resume()
 		res.WriteHeader(http.StatusAccepted)
-		res.Write([]byte("Resuming pom"))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("Resuming Pom"))
 	} else {
 		res.WriteHeader(http.StatusConflict)
-		res.Write([]byte("No pom to pause"))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("No Pom to Resume"))
 	}
 }
 
@@ -180,26 +137,18 @@ func (app *App) apiClearDB(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func jsonStatus() {
-	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
-	// state
-	// start time
-	// finish time
-	// timeSpentPaused
-	// message
-	// name
-}
-
 func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 	if app.currentPom.State() == Running {
 		res.WriteHeader(http.StatusConflict)
 		// TODO: Better output handling
-		minutesLeft := app.currentPom.TimeLeft().Minutes()
-		res.Write([]byte(fmt.Sprintf("Currently in pom %s, ~%d minutes left", app.currentPom.name, int(minutesLeft))))
+		// minutesLeft := app.currentPom.TimeLeft().Minutes()
+		// res.Write([]byte(fmt.Sprintf("Currently in pom %s, ~%d minutes left", app.currentPom.name, int(minutesLeft))))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("Currently in Pom"))
 	} else if app.currentPom.State() == Paused {
 		res.WriteHeader(http.StatusConflict)
 		// TODO: Better output handling
-		res.Write([]byte(fmt.Sprintf("Pom currently paused, %s left", app.currentPom.TimeLeft())))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("Currently in Pom"))
+		// res.Write([]byte(fmt.Sprintf("Pom currently paused, %s left", app.currentPom.TimeLeft())))
 	} else {
 		successCount, err := app.pomStore.GetStatusCount(SUCCESS) // TODO: Wrap in errGet interface?
 		if err != nil {
