@@ -5,10 +5,21 @@ import "time"
 type PomState int
 
 const (
-	Running PomState = iota
+	None PomState = iota
+	Running
 	Paused
-	None
 )
+
+func (ps PomState) String() string {
+	if ps == None {
+		return "None"
+	} else if ps == Running {
+		return "Running"
+	} else if ps == Paused {
+		return "Paused"
+	}
+	return ""
+}
 
 type Pom struct {
 	startTime time.Time
