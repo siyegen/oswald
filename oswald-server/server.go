@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -71,6 +72,16 @@ func (app *App) startTimerHandler() {
 	}()
 }
 
+func jsonStart() {
+	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
+	// state
+	// start time
+	// finish time
+	// pause time -na
+	// message
+	// name
+}
+
 func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 	if app.currentPom.State() == None {
 		vars := mux.Vars(req)
@@ -81,14 +92,25 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 		app.startTimerHandler()
 
 		// TODO: Cleanup into formatter
-		startTime := app.currentPom.startTime.Format(time.Kitchen)
-		finishTime := app.currentPom.FinishTime().Format(time.Kitchen)
+		// startTime := app.currentPom.startTime.Format(time.Kitchen)
+		// finishTime := app.currentPom.FinishTime().Format(time.Kitchen)
 		res.WriteHeader(http.StatusCreated)
-		res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
+		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage())
+		// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
 	} else {
 		res.WriteHeader(http.StatusBadRequest)
 		res.Write([]byte("Pom already running, pause or cancel first"))
 	}
+}
+
+func jsonCancel() {
+	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
+	// state
+	// start time
+	// finish time -na
+	// timeSpentPaused
+	// message
+	// name
 }
 
 func (app *App) apiCancelHandler(res http.ResponseWriter, req *http.Request) {
@@ -100,6 +122,16 @@ func (app *App) apiCancelHandler(res http.ResponseWriter, req *http.Request) {
 		res.WriteHeader(http.StatusBadRequest)
 		res.Write([]byte("No current pom to cancel"))
 	}
+}
+
+func jsonPause() {
+	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
+	// state
+	// start time
+	// finish time
+	// pause time
+	// message
+	// name
 }
 
 func (app *App) apiPauseHandler(res http.ResponseWriter, req *http.Request) {
@@ -115,6 +147,16 @@ func (app *App) apiPauseHandler(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func jsonResume() {
+	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
+	// state
+	// start time
+	// finish time
+	// timeSpentPaused
+	// message
+	// name
+}
+
 func (app *App) apiResumeHandler(res http.ResponseWriter, req *http.Request) {
 	if app.currentPom.State() == Paused {
 		app.currentPom.Resume()
@@ -126,6 +168,7 @@ func (app *App) apiResumeHandler(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// special case json
 func (app *App) apiClearDB(res http.ResponseWriter, req *http.Request) {
 	err := app.pomStore.Clear()
 	if err != nil {
@@ -135,6 +178,16 @@ func (app *App) apiClearDB(res http.ResponseWriter, req *http.Request) {
 		res.WriteHeader(http.StatusNoContent)
 		res.Write([]byte("Pom store cleared"))
 	}
+}
+
+func jsonStatus() {
+	// res.Write([]byte(fmt.Sprintf("Started POM at %s, will end at %s", startTime, finishTime)))
+	// state
+	// start time
+	// finish time
+	// timeSpentPaused
+	// message
+	// name
 }
 
 func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
@@ -200,7 +253,6 @@ func main() {
 	sigs := make(chan os.Signal)
 	done := make(chan struct{})
 
-	// TODO: Should the eventbus be more robust?
 	notifications := make(chan PomEvent)
 	pomStore := NewBoltPomStore()
 

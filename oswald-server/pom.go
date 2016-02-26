@@ -1,6 +1,9 @@
 package main
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type PomState int
 
@@ -19,6 +22,42 @@ func (ps PomState) String() string {
 		return "Paused"
 	}
 	return ""
+}
+
+type PomMessage struct {
+	State           PomState      `json:"state"`
+	StartTime       time.Time     `json:"start_time"`
+	FinishTime      time.Time     `json:"finish_time"`
+	TimeSpentPaused time.Duration `json:"total_time_paused"`
+	Message         string        `json:"message"`
+	Name            string        `json:"name"`
+}
+
+type pomJson PomMessage
+
+func (pm *PomMessage) MarshalJSON() ([]byte, error) {
+	logger.Println("hi Marshal")
+	return json.Marshal(&struct {
+		State string `json:"state"`
+		*pomJson
+	}{
+		State:   pm.State.String(),
+		pomJson: (*pomJson)(pm),
+	})
+}
+
+func (p *Pom) ToPomMessage() *PomMessage {
+	pomMessage := &PomMessage{
+		State:           p.state,
+		StartTime:       p.startTime,
+		TimeSpentPaused: p.timeSpentPaused,
+		Name:            p.name,
+		FinishTime:      p.FinishTime(),
+	}
+	if p.State() == Paused {
+		pomMessage.TimeSpentPaused += time.Now().Sub(p.pauseTime)
+	}
+	return pomMessage
 }
 
 type Pom struct {
