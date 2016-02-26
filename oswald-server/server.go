@@ -54,15 +54,6 @@ type App struct {
 	lastStartTime time.Time
 }
 
-func (app *App) inPom() bool {
-	state := app.currentPom.State()
-	if state == Running || state == Paused {
-		return true
-	} else {
-		return false
-	}
-}
-
 func (app *App) startTimerHandler() {
 	go func() {
 		success := <-app.currentPom.done
@@ -81,7 +72,7 @@ func (app *App) startTimerHandler() {
 }
 
 func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
-	if !app.inPom() {
+	if app.currentPom.State() == None {
 		vars := mux.Vars(req)
 		optName, _ := vars["name"]
 
@@ -101,7 +92,7 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 }
 
 func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
-	if app.inPom() {
+	if app.currentPom.State() == Running || app.currentPom.State() == Paused {
 		app.currentPom.Stop()
 		res.WriteHeader(http.StatusAccepted)
 		res.Write([]byte("Pom has been cancelled"))
