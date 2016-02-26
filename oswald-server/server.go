@@ -118,7 +118,14 @@ func (app *App) apiPauseHandler(res http.ResponseWriter, req *http.Request) {
 		app.pomStore.StoreStatus(PAUSED, event)
 		res.WriteHeader(http.StatusAccepted)
 		res.Write([]byte("Pom has been paused"))
-	} else if app.currentPom.State() == Paused {
+	} else {
+		res.WriteHeader(http.StatusConflict)
+		res.Write([]byte("No pom to pause"))
+	}
+}
+
+func (app *App) apiResumeHandler(res http.ResponseWriter, req *http.Request) {
+	if app.currentPom.State() == Paused {
 		app.currentPom.Resume()
 		res.WriteHeader(http.StatusAccepted)
 		res.Write([]byte("Resuming pom"))
@@ -227,6 +234,7 @@ func main() {
 	r.HandleFunc("/status", app.apiStatusHandler)
 	r.HandleFunc("/stop", app.apiStopHandler)
 	r.HandleFunc("/pause", app.apiPauseHandler)
+	r.HandleFunc("/resume", app.apiResumeHandler)
 	r.HandleFunc("/clear", app.apiClearDB)
 
 	// better way to handle this?
