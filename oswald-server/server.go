@@ -91,7 +91,7 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (app *App) apiStopHandler(res http.ResponseWriter, req *http.Request) {
+func (app *App) apiCancelHandler(res http.ResponseWriter, req *http.Request) {
 	if app.currentPom.State() == Running || app.currentPom.State() == Paused {
 		app.currentPom.Stop()
 		res.WriteHeader(http.StatusAccepted)
@@ -223,7 +223,7 @@ func main() {
 	r.HandleFunc("/start", app.apiStartHandler)
 	r.HandleFunc("/start/{name}", app.apiStartHandler)
 	r.HandleFunc("/status", app.apiStatusHandler)
-	r.HandleFunc("/stop", app.apiStopHandler)
+	r.HandleFunc("/cancel", app.apiCancelHandler)
 	r.HandleFunc("/pause", app.apiPauseHandler)
 	r.HandleFunc("/resume", app.apiResumeHandler)
 	r.HandleFunc("/clear", app.apiClearDB)
