@@ -37,15 +37,19 @@ type pomJson PomMessage
 
 func (pm *PomMessage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&struct {
-		State string `json:"state"`
-		// TimeSpentPaused string `json:"total_time_paused,number"`
+		State           string `json:"state"`
+		TimeSpentPaused string `json:"total_time_paused"`
 		*pomJson
 	}{
-		State:   pm.State.String(),
-		pomJson: (*pomJson)(pm),
-		// TimeSpentPaused: pm.TimeSpentPaused.Minutes(),
+		State:           pm.State.String(),
+		pomJson:         (*pomJson)(pm),
+		TimeSpentPaused: pm.TimeSpentPaused.String(),
 	})
 }
+
+// func PrettyTime(d time.Duration) {
+//
+// }
 
 type Pom struct {
 	startTime time.Time
