@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strconv"
 	"time"
 )
 
@@ -47,9 +48,13 @@ func (pm *PomMessage) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// func PrettyTime(d time.Duration) {
-//
-// }
+func PrettyTime(d time.Duration) string {
+	if d.Minutes() > 1 {
+		return "" + strconv.Itoa(int(d.Minutes()))
+	} else {
+		return "Less than 1 min"
+	}
+}
 
 type Pom struct {
 	startTime time.Time
