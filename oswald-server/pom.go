@@ -86,6 +86,16 @@ func NewPom(optionalName string, duration time.Duration) *Pom {
 }
 
 func (p *Pom) ToPomMessage(message string) *PomMessage {
+	if p == nil {
+		return &PomMessage{
+			State: None,
+			// StartTime:       nil,
+			TimeSpentPaused: time.Minute * 0,
+			// Name:            "",
+			// FinishTime:      nil,
+			Message: message,
+		}
+	}
 	logger.Println("Start Time", p.startTime)
 	logger.Println("Finish Time", p.FinishTime())
 	logger.Println("Time Left", p.TimeLeft())
