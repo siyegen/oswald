@@ -25,6 +25,13 @@ func (ps PomState) String() string {
 	return ""
 }
 
+var stateMessageLookup = map[string]map[PomState]map[PomState]string{
+	"start":  map[PomState]map[PomState]string{None: map[PomState]string{Running: "Started Pom"}, Running: map[PomState]string{Running: "Currently in Pom"}, Paused: map[PomState]string{Paused: "Pom is paused, Resume to continue"}},
+	"cancel": map[PomState]map[PomState]string{None: map[PomState]string{None: "No Pom to cancel"}, Running: map[PomState]string{None: "Cancelled Pom"}, Paused: map[PomState]string{None: "Cancelled Pom"}},
+	"pause":  map[PomState]map[PomState]string{Running: map[PomState]string{Paused: "Paused Pom"}, Paused: map[PomState]string{Paused: "Pom is already paused"}, None: map[PomState]string{None: "No Pom to pause"}},
+	"resume": map[PomState]map[PomState]string{Paused: map[PomState]string{Running: "Resuming Pom"}, Running: map[PomState]string{Running: "Pom is already running"}, None: map[PomState]string{None: "No Pom to resume"}},
+}
+
 type PomMessage struct {
 	State           PomState      `json:"state"`
 	StartTime       time.Time     `json:"start_time"`
@@ -85,8 +92,11 @@ func NewPom(optionalName string, duration time.Duration) *Pom {
 	}
 }
 
-func (p *Pom) ToPomMessage(message string) *PomMessage {
+func (p *Pom) ToPomMessage(action string, oldState PomState) *PomMessage {
+	logger.Printf("action %s, old %s, current %s\n", action, oldState, p.State())
+	message := stateMessageLookup[action][oldState][p.State()]
 	if p == nil {
+		logger.Println("Nil pom state", p.State())
 		return &PomMessage{
 			State: None,
 			// StartTime:       nil,
