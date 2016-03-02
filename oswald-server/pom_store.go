@@ -41,9 +41,9 @@ func createUser(db *bolt.DB) ([]byte, error) {
 	return uid, err
 }
 
-func NewBoltPomStore() PomStore {
-	name := "_dev.db"
-	db, err := bolt.Open(fmt.Sprintf("dev_db/%s", name), 0600, nil)
+func NewBoltPomStore(dbLocation, dbName string) PomStore {
+	name := fmt.Sprintf("%s/%s", dbLocation, dbName)
+	db, err := bolt.Open(name, 0600, nil)
 	if err != nil {
 		logger.Fatalf("Error opening db %s", err)
 	}

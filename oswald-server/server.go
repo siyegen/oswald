@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"os/user"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -190,6 +192,7 @@ func (n *OSXNotifier) SendNotification(message, title string) error {
 	return err
 }
 
+// TODO: Config, defaults, customization
 func main() {
 	logger.Println("Starting Up")
 	var notifier OSNotifier
@@ -199,11 +202,28 @@ func main() {
 		notifier = &CmdLineNotifier{}
 	}
 
+	osUser, err := user.Current()
+	if err != nil {
+		logger.Fatal("Unable to get current user", err)
+	}
+	var dbLocation string
+	if runtime.GOOS == "windows" { // windows
+		dbLocation = "%userprofile%\\.oswald/pom.db"
+	} else { // linux / mac
+		dbLocation = filepath.Join(osUser.HomeDir, ".oswald")
+	}
+
+	logger.Println("creating dir", dbLocation)
+	err = os.MkdirAll(dbLocation, 0777)
+	if err != nil {
+		logger.Fatal("Unable to create directory for database ", err)
+	}
+
 	sigs := make(chan os.Signal)
 	done := make(chan struct{})
 
 	notifications := make(chan PomEvent)
-	pomStore := NewBoltPomStore()
+	pomStore := NewBoltPomStore(dbLocation, "pom.db")
 
 	app := &App{
 		eventBus: notifications,
