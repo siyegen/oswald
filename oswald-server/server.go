@@ -18,18 +18,17 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const LOG_PREFIX string = "[Oswald]"
-const POM_TIME time.Duration = time.Second * 30
+const logPrefix string = "[Oswald]"
+const pomTime time.Duration = time.Second * 30
+const osxCmd string = "osascript"
 
-const OSX_CMD string = "osascript"
-
-var logger *log.Logger = log.New(os.Stdout, LOG_PREFIX, log.LstdFlags)
+var logger *log.Logger = log.New(os.Stdout, logPrefix, log.LstdFlags)
 
 type StatusString string
 
-const SUCCESS StatusString = "success"
-const CANCELLED StatusString = "cancelled"
-const PAUSED StatusString = "paused"
+const successStatus StatusString = "success"
+const cancelledStatus StatusString = "cancelled"
+const pausedStatus StatusString = "paused"
 
 type PomEvent struct {
 	name      string
@@ -63,12 +62,12 @@ func (app *App) startTimerHandler() {
 		if success {
 			logger.Println("Finished Pom, from startPom method", app.currentPom.name)
 			event := NewPomEvent("Success", "Oswald", "Pom Finished", app.currentPom.name, time.Now())
-			app.pomStore.StoreStatus(SUCCESS, event)
+			app.pomStore.StoreStatus(successStatus, event)
 			app.eventBus <- event
 		} else {
 			logger.Println("Cancelled Pom, from startPom method", app.currentPom.name)
 			event := NewPomEvent("Cancelled", "Oswald", "Pom Cancelled", app.currentPom.name, time.Now())
-			app.pomStore.StoreStatus(CANCELLED, event)
+			app.pomStore.StoreStatus(cancelledStatus, event)
 			app.eventBus <- event
 		}
 	}()
@@ -80,7 +79,7 @@ func (app *App) apiStartHandler(res http.ResponseWriter, req *http.Request) {
 		vars := mux.Vars(req)
 		optName, _ := vars["name"]
 
-		app.currentPom = NewPom(optName, POM_TIME)
+		app.currentPom = NewPom(optName, pomTime)
 		app.currentPom.Start()
 		app.startTimerHandler()
 
@@ -110,7 +109,7 @@ func (app *App) apiPauseHandler(res http.ResponseWriter, req *http.Request) {
 	if oldState == Running {
 		app.currentPom.Pause()
 		event := NewPomEvent("Paused", "Oswald", "Pom Paused", app.currentPom.name, time.Now())
-		app.pomStore.StoreStatus(PAUSED, event)
+		app.pomStore.StoreStatus(pausedStatus, event)
 		res.WriteHeader(http.StatusAccepted)
 		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("pause", oldState))
 	} else {
@@ -156,15 +155,15 @@ func (app *App) apiStatusHandler(res http.ResponseWriter, req *http.Request) {
 		json.NewEncoder(res).Encode(app.currentPom.ToPomMessage("Currently in Pom", None))
 		// res.Write([]byte(fmt.Sprintf("Pom currently paused, %s left", app.currentPom.TimeLeft())))
 	} else {
-		successCount, err := app.pomStore.GetStatusCount(SUCCESS) // TODO: Wrap in errGet interface?
+		successCount, err := app.pomStore.GetStatusCount(successStatus) // TODO: Wrap in errGet interface?
 		if err != nil {
 			logger.Printf("Error getting status count %s", err)
 		}
-		cancelledCount, err := app.pomStore.GetStatusCount(CANCELLED) // TODO: Wrap in errGet interface?
+		cancelledCount, err := app.pomStore.GetStatusCount(cancelledStatus) // TODO: Wrap in errGet interface?
 		if err != nil {
 			logger.Printf("Error getting status count %s", err)
 		}
-		pausedCount, err := app.pomStore.GetStatusCount(PAUSED) // TODO: Wrap in errGet interface?
+		pausedCount, err := app.pomStore.GetStatusCount(pausedStatus) // TODO: Wrap in errGet interface?
 		if err != nil {
 			logger.Printf("Error getting status count %s", err)
 		}
@@ -199,9 +198,10 @@ func (n *OSXNotifier) SendNotification(message, title string) error {
 // TODO: Config, defaults, customization
 func main() {
 	logger.Println("Starting Up")
+	// TODO: Add support for growl
 	var notifier OSNotifier
 	if runtime.GOOS == "darwin" {
-		notifier = &OSXNotifier{OSX_CMD, "-e"}
+		notifier = &OSXNotifier{osxCmd, "-e"}
 	} else {
 		notifier = &CmdLineNotifier{}
 	}
@@ -210,12 +210,8 @@ func main() {
 	if err != nil {
 		logger.Fatal("Unable to get current user", err)
 	}
-	var dbLocation string
-	if runtime.GOOS == "windows" { // windows
-		dbLocation = "%userprofile%\\.oswald/pom.db"
-	} else { // linux / mac
-		dbLocation = filepath.Join(osUser.HomeDir, ".oswald")
-	}
+
+	dbLocation := filepath.Join(osUser.HomeDir, ".oswald")
 
 	logger.Println("creating dir", dbLocation)
 	err = os.MkdirAll(dbLocation, 0777)

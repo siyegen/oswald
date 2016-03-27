@@ -49,7 +49,7 @@ func NewBoltPomStore(dbLocation, dbName string) PomStore {
 	}
 	uid, err := createUser(db)
 	if err != nil {
-		logger.Fatalf("Error creating uid", err)
+		logger.Fatalf("Error creating uid %s", err)
 	}
 	return &BoltPomStore{db: db, dbName: name, userId: string(uid)}
 }
@@ -59,9 +59,9 @@ func (b *BoltPomStore) Clear() error {
 	err := b.db.Update(func(tx *bolt.Tx) error {
 		uidKey := []byte(UID_BUCKET)
 		userId := []byte(b.userId)
-		tx.DeleteBucket([]byte(SUCCESS))
-		tx.DeleteBucket([]byte(CANCELLED))
-		tx.DeleteBucket([]byte(PAUSED))
+		tx.DeleteBucket([]byte(successStatus))
+		tx.DeleteBucket([]byte(cancelledStatus))
+		tx.DeleteBucket([]byte(pausedStatus))
 		tx.DeleteBucket(uidKey)
 		tx.DeleteBucket(userId)
 		return nil
