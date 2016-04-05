@@ -1,38 +1,37 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"os/exec"
-	"time"
 )
 
-const POM_TIME time.Duration = time.Minute * 25
-
-const OSX_CMD string = "osascript"
-
-type OSXNotifier struct {
-	baseCommand string
-	flag        string
-	// messageArg  string
-}
-
-func (n *OSXNotifier) sendNotification(message, title string) error {
-	fullMessage := fmt.Sprintf("display notification \"%s\" with title \"%s\"", message, title)
-	cmdArgs := []string{n.flag, fullMessage}
-	_, err := exec.Command(OSX_CMD, cmdArgs...).Output()
-	return err
-}
-
 func main() {
-	fmt.Println("Starting a pom!")
-	nnn := &OSXNotifier{OSX_CMD, "-e"}
-	// pomTimer := time.NewTimer(POM_TIME)
-	// <-pomTimer.C
-	// out, err := exec.Command(cmd, argsAA...).Output()
-	err := nnn.sendNotification("I'm mister message", "Title bitch")
-	if err != nil {
-		fmt.Println("Error", err)
-	}
+	start := flag.String("start", "", "pom to start")
+	cancel := flag.Bool("cancel", false, "pom to cancel")
+	pause := flag.Bool("pause", false, "pom to pause")
+	resume := flag.Bool("resume", false, "pom to resume")
+	status := flag.Bool("status", false, "see pom status")
+	clear := flag.Bool("clear", false, "pom to clear")
+	flag.Parse()
 
-	fmt.Println("Finished a pom!")
+	client := New()
+
+	fmt.Println(*status)
+
+	switch {
+	case *start != "":
+		client.Start(*start)
+	case *cancel:
+		client.Cancel()
+	case *pause:
+		client.Pause()
+	case *resume:
+		client.Resume()
+	case *status:
+		client.Status()
+	case *clear:
+		client.Clear()
+	default:
+		flag.Usage()
+	}
 }

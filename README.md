@@ -4,24 +4,26 @@ Oswald, POM tracker
 WIP, don't expect it to work 100% yet
 
 ## Install
-#### For dev
-- clone project into your workspace
 - Install bolt: ```go get github.com/boltdb/bolt/...```
-- make the directory for bolt: ```mkdir dev_db```
-- Follow build instructions below
+- Install oswald: ```go get github.com/siyegen/oswald/...```
 
-## How to build
-Client: ```go build -o build/oswald ./oswald-client```
+## How To Run
 
-Server ```go build -o build/oswald-server ./oswald-server```
-
-### How to run
+### Server
 ```./oswald-server``` to start server
 
-### TODO
+### Client
+```./oswald-client -start "pom_name"``` to start a pom
 
-```./oswald start -name "pom_name"``` to start a pom
+```./oswald-client -status``` to display time left in pom, or stats
 
-```./oswald status``` to display time left in pom, or stats
+```./oswald-client -stop``` to cancel the currently running pom
 
-```./oswald stop``` to cancel the currently running pom
+```./oswald-client -help``` to see all commands
+
+## Contributing
+
+### How to build
+Client: ```go build -o build/oswald-client ./oswald-client```
+
+Server ```go build -o build/oswald-server ./oswald-server```

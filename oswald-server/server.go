@@ -19,7 +19,7 @@ import (
 )
 
 const logPrefix string = "[Oswald]"
-const pomTime time.Duration = time.Second * 30
+const pomTime time.Duration = time.Minute * 25
 const osxCmd string = "osascript"
 
 var logger *log.Logger = log.New(os.Stdout, logPrefix, log.LstdFlags)
